@@ -31,9 +31,7 @@ func PromptInt(
 	prompt string,
 	low, high int,
 	defaultValue *int,
-) int {
-	var choice int
-
+) (int, error) {
 	validInt := func(s string) error {
 		if strings.TrimSpace(s) == "" && defaultValue != nil {
 			return nil
@@ -48,15 +46,18 @@ func PromptInt(
 		return nil
 	}
 
-	input := PromptString(
+	input, err := PromptString(
 		out,
 		in,
 		prompt,
 		ptrToStr(defaultValue, strconv.Itoa),
 		validInt,
 	)
-	choice, _ = strconv.Atoi(input)
-	return choice
+	if err != nil {
+		return 0, err
+	}
+	choice, _ := strconv.Atoi(input)
+	return choice, nil
 }
 
 func parseBool(s string) (bool, error) {
@@ -84,7 +85,7 @@ func PromptBool(
 	in io.Reader,
 	prompt string,
 	defaultValue bool,
-) bool {
+) (bool, error) {
 	validBool := func(s string) error {
 		if strings.TrimSpace(s) == "" {
 			return nil
@@ -93,13 +94,16 @@ func PromptBool(
 		return err
 	}
 
-	input := PromptString(
+	input, err := PromptString(
 		out, in, prompt,
 		boolToStr(defaultValue),
 		validBool,
 	)
+	if err != nil {
+		return false, err
+	}
 	b, _ := parseBool(input)
-	return b
+	return b, nil
 }
 
 // PromptPassword allows to prompt for a password.
@@ -127,13 +131,16 @@ func PromptPassword(
 
 // PromptString prompts a user for a string value and validates it against a
 // validator function. It re-prompts the user until a valid input is given.
+//
+// If the input ends before a valid answer is read, it returns the reader's
+// error, or io.EOF when the input simply ran out.
 func PromptString(
 	out io.Writer,
 	in io.Reader,
 	prompt string,
 	defaultValue string,
 	validator func(input string) error,
-) string {
+) (string, error) {
 	var (
 		valid bool
 		input string
@@ -143,13 +150,10 @@ func PromptString(
 		_, _ = fmt.Fprint(out, prompt)
 		line, err := readLine(in)
 		if err != nil {
-			// no way to bubble up errors or signal cancellation
-			// but the program is probably not continuing if
-			// stdin sent EOF
 			_, _ = fmt.Fprintln(out)
-			break
+			return "", err
 		}
-		input = line
+		input = cmp.Or(strings.TrimSpace(line), defaultValue)
 
 		if err := validator(input); err != nil {
 			_, _ = fmt.Fprintln(out, err)
@@ -159,7 +163,7 @@ func PromptString(
 		break
 	}
 
-	return cmp.Or(strings.TrimSpace(input), defaultValue)
+	return input, nil
 }
 
 // readLine reads one line from in, a byte at a time. A bufio.Scanner would
